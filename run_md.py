@@ -37,20 +37,45 @@ def run() -> None:
 
     #  创建控件
     edit = QtWidgets.QTextEdit()
-    edit.show()
+    
 
     line = QtWidgets.QLineEdit()
-    line.show()
-
+   
     button = QtWidgets.QPushButton("订阅")
-    button.show()
+    
+
+    #垂直和水平布局
+    #layout = QtWidgets.QVBoxLayout()
+    #layout = QtWidgets.QHBoxLayout()
+
+    #layout.addWidget(edit)
+    #layout.addWidget(line)
+    #layout.addWidget(button)
+
+    # 网格布局
+    # layout = QtWidgets.QGridLayout()
+    #layout.addWidget(line, 0, 0)
+    #layout.addWidget(button, 0, 1)
+    #layout.addWidget(edit, 1, 0, 1, 2)
+
+    # 表单布局
+    layout = QtWidgets.QFormLayout()
+    layout.addRow("合约",line)
+    layout.addRow("订阅", button)
+    layout.addRow("信息", edit)
+
+    #设置布局
+    widget = QtWidgets.QWidget()
+    widget.setLayout(layout)
+    widget.show()
+
 
     # 创建主引擎
     event_engine: EventEngine = EventEngine()
     main_engine: MainEngine = MainEngine(event_engine)
     main_engine.add_gateway(Gateway)
     edit.append("创建主引擎成功")  
-
+ 
     # 定义行情打印函数
     def print_tick(event: Event) -> None:
         """打印行情数据"""
