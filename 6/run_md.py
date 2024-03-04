@@ -1,12 +1,11 @@
-from pathlib import Path
-from PySide6 import QtWidgets, QtCore, QtGui
+from PySide6 import QtWidgets, QtCore
 
 from vnpy.event import EventEngine, Event
 from vnpy.trader.engine import MainEngine
-from vnpy.trader.object import TickData, SubscribeRequest, ContractData
+from vnpy.trader.object import TickData, SubscribeRequest, ContractData, OrderRequest
 from vnpy.trader.event import EVENT_TICK
 from vnpy.trader.utility import load_json
-from vnpy.trader.constant import Exchange
+from vnpy.trader.constant import Exchange, Direction, Offset, OrderType
 
 from vnpy_tts import TtsGateway as Gateway
 #  from vnpy_ctp import CtpGateway as Gateway
@@ -14,7 +13,7 @@ from vnpy_tts import TtsGateway as Gateway
 
 gateway_name: str = Gateway.default_name
 
-setting: dict = load_json("connect_ctp.json")
+# setting: dict = load_json("connect_tts.json")
 
 setting: dict = {
     #  "用户名": "222772",
@@ -35,7 +34,86 @@ setting: dict = {
 }
 
 
-class DataWidget(QtWidgets.QWidget):
+class TradingWidget(QtWidgets.QWidget):
+    """交易控件"""
+
+    def __init__(self, main_engine: MainEngine) -> None:
+        """构造函数"""
+        super().__init__()
+
+        self.main_engine = main_engine
+        self.init_ui()
+
+    def init_ui(self) -> None:
+        """初始化界面"""
+        # 创建控件
+        self.symbol_line = QtWidgets.QLineEdit()
+        self.exchange_combo = QtWidgets.QComboBox()
+        self.exchange_combo.addItems([
+            Exchange.CFFEX.value,
+            Exchange.SHFE.value,
+            Exchange.DCE.value,
+            Exchange.CZCE.value,
+        ])
+        self.direction_combo = QtWidgets.QComboBox()
+        self.direction_combo.addItems([
+            Direction.LONG.value,
+            Direction.SHORT.value, 
+        ])
+        self.offset_combo = QtWidgets.QComboBox()
+        self.offset_combo.addItems([
+            Offset.OPEN.value,
+            Offset.CLOSE.value,
+            Offset.CLOSETODAY.value,
+            Offset.CLOSEYESTERDAY.value, 
+        ])
+        self.price_line = QtWidgets.QLineEdit()
+        self.volume_line = QtWidgets.QLineEdit()
+
+        button = QtWidgets.QPushButton("下单")
+        button.clicked.connect(self.send_order)
+
+        form = QtWidgets.QFormLayout()
+        form.addRow("代码", self.symbol_line)
+        form.addRow("交易商", self.exchange_combo) 
+        form.addRow("方向", self.direction_combo)
+        form.addRow("开平", self.offset_combo)
+        form.addRow("价格", self.price_line)
+        form.addRow("数量", self.volume_line)
+        form.addRow(button)
+
+        self.setLayout(form)
+
+    def send_order(self) -> None:
+        """发送委托"""
+        symbol = self.symbol_line.text()
+        exchange = Exchange(self.exchange_combo.currentText())
+        direction = Direction(self.direction_combo.currentText())
+        offset = Offset(self.offset_combo.currentText())
+        price = float(self.price_line.text())
+        volume = int(self.volume_line.text())
+        order_type = OrderType.LIMIT
+
+        # 确认合约存在
+        vt_symbol = f"{symbol}.{exchange.value}"
+        contract_new = self.main_engine.get_contract(vt_symbol)
+        if not contract_new:
+            return
+        
+        # 发送委托请求
+        req = OrderRequest(
+            symbol=symbol,
+            exchange=exchange,
+            direction=direction,
+            type=order_type,
+            volume=volume,
+            price=price,
+            offset=offset, 
+        )
+        self.main_engine.send_order(req, contract_new.gateway_name)
+        
+
+class MainWidget(QtWidgets.QWidget):
     """市场行情组件"""
 
     # 在类中直接定义signal成员变量，而非__init__构造函数中
@@ -81,14 +159,23 @@ class DataWidget(QtWidgets.QWidget):
         # 绑定触发
         self.button.clicked.connect(self.subscribe)
 
+        # 交易控件
+        self.trading_widget = TradingWidget(self.main_engine)
+
         # 网格布局
-        layout = QtWidgets.QGridLayout()
-        layout.addWidget(label, 0, 0, 1, 2)
-        layout.addWidget(self.line, 1, 0)
-        layout.addWidget(self.combo, 1, 1)
-        layout.addWidget(self.button, 1, 2)
-        layout.addWidget(self.edit, 2, 0, 1, 3)
-        self.setLayout(layout)
+        grid = QtWidgets.QGridLayout()
+        grid.addWidget(label, 0, 0, 1, 2)
+        grid.addWidget(self.line, 1, 0)
+        grid.addWidget(self.combo, 1, 1)
+        grid.addWidget(self.button, 1, 2)
+        grid.addWidget(self.edit, 2, 0, 1, 3)
+        
+        # 垂直布局
+        vbox = QtWidgets.QVBoxLayout()
+        vbox.addLayout(grid)
+        vbox.addWidget(self.trading_widget)
+
+        self.setLayout(vbox)
 
     def register_event(self) -> None:
         """注册事件监听"""
@@ -123,6 +210,7 @@ class DataWidget(QtWidgets.QWidget):
         # 查阅合约数据
         contract: ContractData = self.main_engine.get_contract(vt_symbol)
         if not contract:
+            self.edit.append(f"找不到合约{vt_symbol}")
             return
         
         req = SubscribeRequest(contract.symbol, contract.exchange)
@@ -140,7 +228,7 @@ def run() -> None:
     main_engine.add_gateway(Gateway)
    
     # 创建控件
-    Widget = DataWidget(main_engine, event_engine)
+    Widget = MainWidget(main_engine, event_engine)
     Widget.show()
 
     # 连接交易接口

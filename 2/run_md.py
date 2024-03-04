@@ -73,7 +73,7 @@ def run() -> None:
         text: str = ""
 
         for t in ticks.values():
-            text += f"{tick.vt_symbol}\tbid:{t.bid_price_1}\task:{t.ask_price_1}\n"
+            text += f"{t.vt_symbol}\tbid:{t.bid_price_1}\task:{t.ask_price_1}\n"
 
         # GUI 输出信息
         edit.append(text)
