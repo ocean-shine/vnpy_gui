@@ -214,7 +214,7 @@ class MainWidget(QtWidgets.QWidget):
             return
         
         # 计算持仓变化
-        oi_change: int = last_tick.open_interest - tick.open_interest
+        oi_change: int = tick.open_interest - last_tick.open_interest
 
         if oi_change > 0:
             oi_str = "开"
@@ -224,12 +224,12 @@ class MainWidget(QtWidgets.QWidget):
             oi_str = "换"
 
         # 计算方向变化
-        if tick.last_ptice >= last_tick.ask_price_1:
-            direction_str = ""
-        elif tick.last_price <= last_tick.ask_price_1:
-            direction_str = ""
+        if tick.last_price >= last_tick.ask_price_1:
+            direction_str = "多"
+        elif tick.last_price <= last_tick.bid_price_1:
+            direction_str = "空"
         else:
-            direction_str = ""
+            direction_str = "双"
 
         text = f"{tick.vt_symbol} {tick.last_price} {direction_str} {oi_str}"
         self.edit.append(text) 
