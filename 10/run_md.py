@@ -307,12 +307,12 @@ class FlashWidget(QtWidgets.QWidget):
         
         # 计算委托价格
         contract: ContractData = self.main_engine.get_contract(self.vt_symbol)
-        price = tick.ask_price_1 - contract.pricetick * self.add_spin.value()
+        price = tick.bid_price_1 - contract.pricetick * self.add_spin.value()
         # 发出交易委托
         req = OrderRequest(
             symbol=tick.symbol,
             exchange=tick.exchange,
-            direction=Direction.LONG,
+            direction=Direction.SHORT,
             type=OrderType.LIMIT,
             offset=Offset(self.offset_combo.currentText()),
             volume=self.volume_spin.value(),
@@ -456,15 +456,6 @@ class MainWidget(QtWidgets.QWidget):
 
         # 显示控件
         self.login_widget.show()
-
-    def show_flash_widget(self) -> None:
-        """显示闪电交易控件"""
-        # 如果没有则创建
-        if not hasattr(self, "flash_widget"):
-            self.flash_widget = FlashWidget(self.main_engine)
-
-        # 显示控件
-        self.flash_widget.show()
 
 
 def run() -> None:

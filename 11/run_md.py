@@ -1,4 +1,4 @@
-from PySide6 import QtWidgets, QtCore
+from PySide6 import QtWidgets, QtCore, QtGui
 
 from vnpy.event import EventEngine, Event
 from vnpy.trader.engine import MainEngine
@@ -134,7 +134,7 @@ class TradingWidget(QtWidgets.QWidget):
 
         self.volume_spin = QtWidgets.QSpinBox()
         self.volume_spin.setSuffix("手")
-        self.volume_spin.setRange(1,1000)
+        self.volume_spin.setRange(1, 1000)
 
         button = QtWidgets.QPushButton("下单")
         button.clicked.connect(self.send_order)
@@ -190,6 +190,152 @@ class TradingWidget(QtWidgets.QWidget):
             self.volume_spin.setSingleStep(contract.min_volume) 
 
 
+class FlashWidget(QtWidgets.QWidget):
+    """闪电交易组件"""
+
+    signal = QtCore.Signal(Event)
+
+    def __init__(self, main_engine: MainEngine, event_engine: EventEngine) -> None:
+        """构造函数"""
+        super().__init__()
+
+        self.main_engine = main_engine
+        self.event_engine = event_engine
+
+        self.vt_symbol = ""
+
+        self.init_ui()
+        self.init_shortcut()
+        self.register_event()
+
+    def init_ui(self) -> None:
+        """初始化界面"""
+        self.symbol_line = QtWidgets.QLineEdit()
+        self.symbol_line.setPlaceholderText("输入闪电交易码， 如ag2403.SHFE")
+        self.symbol_line.returnPressed.connect(self.update_symbol)
+
+        self.volume_spin = QtWidgets.QSpinBox()
+        self.volume_spin.setPrefix("数量")
+        self.volume_spin.setSuffix("手")
+        self.volume_spin.setRange(0, 100)
+
+        self.add_spin = QtWidgets.QSpinBox()
+        self.add_spin.setPrefix("超价")
+        self.add_spin.setSuffix("跳")
+        self.add_spin.setRange(1, 100)
+
+        self.offset_combo = QtWidgets.QComboBox()
+        self.offset_combo.addItems([o.value for o in Offset if o.value])
+
+        height = 100
+        self.bid_button = QtWidgets.QPushButton()
+        self.bid_button.setFixedHeight(height)
+        self.bid_button.clicked.connect(self.sell)
+
+        self.ask_button = QtWidgets.QPushButton()
+        self.ask_button.setFixedHeight(height)
+        self.ask_button.clicked.connect(self.buy)
+
+        grid = QtWidgets.QGridLayout()
+        grid.addWidget(self.symbol_line, 0, 0, 1, 2)
+        grid.addWidget(self.offset_combo, 1, 0, 1, 2)
+        grid.addWidget(self.volume_spin, 2, 0)
+        grid.addWidget(self.add_spin, 2, 1)
+        grid.addWidget(self.bid_button, 3, 0)
+        grid.addWidget(self.ask_button, 3, 1)
+
+        self.setLayout(grid)
+
+    def init_shortcut(self) -> None:
+        """初始化快捷键"""
+        self.buy_shortcut = QtGui.QShortcut(
+            QtGui.QKeySequence("Ctrl+B"),
+            self
+        )
+        self.buy_shortcut.activated.connect(self.buy)
+
+        self.sell_shortcut = QtGui.QShortcut(
+            QtGui.QKeySequence("Ctrl+S"),
+            self
+        )
+        self.sell_shortcut.activated.connect(self.sell)
+
+    def register_event(self) -> None:
+        """注册事件监听"""
+        self.signal.connect(self.process_tick_event)
+        self.event_engine.register(EVENT_TICK, self.signal.emit)
+
+    def update_symbol(self) -> None:
+        """更新当前交易代码"""
+        # 获取代码
+        vt_symbol = self.symbol_line.text()
+
+        # 查询合约
+        contract = self.main_engine.get_contract(vt_symbol)
+        if not contract:
+            return
+    
+        # 订阅行情
+        req = SubscribeRequest(contract.symbol, contract.exchange)
+        self.main_engine.subscribe(req, contract.gateway_name)
+
+        # 绑定代码
+        self.vt_symbol = vt_symbol
+
+    def process_tick_event(self, event: Event) -> None:
+        """处理行情事件"""
+        tick: TickData = event.data
+        if tick.vt_symbol != self.vt_symbol:
+            return
+        
+        self.bid_button.setText(f"{tick.bid_price_1}\n\n{tick.bid_volume_1}")
+        self.ask_button.setText(f"{tick.ask_price_1}\n\n{tick.ask_volume_1}")
+
+    def buy(self) -> None:
+        """买入"""
+        # 查询最新行情
+        tick: TickData = self.main_engine.get_tick(self.vt_symbol)
+        if not tick:
+            return
+        
+        # 计算委托价格
+        contract: ContractData = self.main_engine.get_contract(self.vt_symbol)
+        price = tick.ask_price_1 + contract.pricetick * self.add_spin.value()
+        # 发出交易委托
+        req = OrderRequest(
+            symbol=tick.symbol,
+            exchange=tick.exchange,
+            direction=Direction.LONG,
+            type=OrderType.LIMIT,
+            offset=Offset(self.offset_combo.currentText()),
+            volume=self.volume_spin.value(),
+            price=price,
+        )
+        self.main_engine.send_order(req, tick.gateway_name)
+
+    def sell(self) -> None:
+        """卖出"""
+        # 查询最新行情
+        tick: TickData = self.main_engine.get_tick(self.vt_symbol)
+        if not tick:
+            return
+        
+        # 计算委托价格
+        contract: ContractData = self.main_engine.get_contract(self.vt_symbol)
+        price = tick.bid_price_1 - contract.pricetick * self.add_spin.value()
+        # 发出交易委托
+        req = OrderRequest(
+            symbol=tick.symbol,
+            exchange=tick.exchange,
+            direction=Direction.SHORT,
+            type=OrderType.LIMIT,
+            offset=Offset(self.offset_combo.currentText()),
+            volume=self.volume_spin.value(),
+            price=price,
+        )
+        self.main_engine.send_order(req, tick.gateway_name)
+
+
 class MainWidget(QtWidgets.QWidget):
     """市场行情组件"""
 
@@ -216,11 +362,12 @@ class MainWidget(QtWidgets.QWidget):
         self.edit = QtWidgets.QTextEdit()
         self.line = QtWidgets.QLineEdit()
         self.button = QtWidgets.QPushButton("订阅")
-
+        self.flash_widget = QtWidgets.QComboBox()
+        
         # 标签控件
         label = QtWidgets.QLabel()
         label.setText("市场行情监控")  # 文本
-        label.setAlignment(QtCore.Qt.AlignCenter) # 对齐
+        label.setAlignment(QtCore.Qt.AlignCenter)  # 对齐
 
         # 下拉框控件
         self.combo = QtWidgets.QComboBox()
@@ -241,6 +388,7 @@ class MainWidget(QtWidgets.QWidget):
 
         # 交易控件
         self.trading_widget = TradingWidget(self.main_engine)
+        self.flash_widget = FlashWidget(self.main_engine, self.event_engine)
 
         # 网格布局
         grid = QtWidgets.QGridLayout()
@@ -255,6 +403,7 @@ class MainWidget(QtWidgets.QWidget):
         vbox = QtWidgets.QVBoxLayout()
         vbox.addLayout(grid)
         vbox.addWidget(self.trading_widget)
+        vbox.addWidget(self.flash_widget)
 
         self.setLayout(vbox)
 
@@ -313,8 +462,26 @@ class MainWidget(QtWidgets.QWidget):
         
         req = SubscribeRequest(contract.symbol, contract.exchange)
         self.main_engine.subscribe(req, contract.gateway_name)
+    
+    def show_login_widget(self) -> None:
+        """显示连接登陆控件"""
+        # 如果没有则创建
+        if not hasattr(self, "login_widget"):
+            self.login_widget = LoginWidget(self.main_engine)
 
- 
+        # 显示控件
+        self.login_widget.show()
+
+    def show_flash_widget(self) -> None:
+        """显示闪电交易控件"""
+        # 如果没有则创建
+        if not hasattr(self, "flash_widget"):
+            self.flash_widget = FlashWidget(self.main_engine)
+
+        # 显示控件
+        self.flash_widget.show()
+
+
 def run() -> None:
     """主程序入口"""
     #  QT应用（事件循环）
