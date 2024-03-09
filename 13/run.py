@@ -335,7 +335,87 @@ class FlashWidget(QtWidgets.QWidget):
         )
         self.main_engine.send_order(req, tick.gateway_name)
 
-
+class TickMonitor(QtWidgets.QTableWidget):
+    """Tick盘口监控控件"""
+    
+    signal = QtCore.Signal(Event)
+    
+    def __init__(self, event_engine: EventEngine) -> None:
+        """构造函数"""
+        super().__init__()
+        
+        self.event_engine = event_engine
+        
+        self.ticks = {}
+        
+        self.init_ui()
+        self.register_event()
+            
+    def init_ui(self) -> None:
+        """初始化界面"""
+        # 表头列表
+        labels = ["代码", "最新价", "信息"]
+        
+        # 设置列数
+        self.setColumnCount(len(labels))
+        
+        # 设置水平表头
+        self.setHorizontalHeaderLabels(labels)
+        self.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        
+        # 关闭垂直表头
+        self.verticalHeader().setVisible(False)
+        
+        # 禁用表头编辑
+        self.setEditTriggers(self.NoEditTriggers)
+        
+    def register_event(self) -> None:
+        """注册事件监听"""
+        self.signal.connect(self.process_tick_event)
+        self.event_engine.register(EVENT_TICK, self.signal.emit)
+        
+    def process_tick_event(self, event: Event   ) -> None:
+        """处理Tick事件"""
+        tick: TickData = event.data
+        last_tick: TickData = self.ticks.get(tick.vt_symbol, None)
+        self.ticks[tick.vt_symbol] = tick
+        
+        # 必须至少有一条缓存才能计算
+        if not last_tick:
+            return
+                
+        # 计算持仓变化
+        oi_change: int = last_tick.open_interest - tick.open_interest
+        if oi_change > 0:
+            oi_str = "开"
+        elif oi_change < 0:
+            oi_str = "平"
+        else:
+            oi_str = "换"
+            
+        # 计算变化方向
+        if tick.last_price >= last_tick.ask_price_1:
+            direction_str = "多"
+        elif tick.last_price <= last_tick.bid_price_1:
+            direction_str = "空"
+        else:
+            direction_str = "双"
+        
+        # 获取当前行数
+        row = self.rowCount()
+        
+        # 在尾部插入行（索引从0开始）
+        self.insertRow(row)
+        
+        # 设置单元格
+        self.setItem(row, 0, QtWidgets.QTableWidgetItem(tick.vt_symbol))
+        self.setItem(row, 1, QtWidgets.QTableWidgetItem(str(tick.last_price)))
+        self.setItem(row, 2, QtWidgets.QTableWidgetItem(f"{direction_str}{oi_str}"))
+        
+        # 滚动到底部
+        self.scrollToBottom()
+        
+        
 class MainWidget(QtWidgets.QWidget):
     """市场行情组件"""
 
@@ -362,7 +442,7 @@ class MainWidget(QtWidgets.QWidget):
         self.edit = QtWidgets.QTextEdit()
         self.line = QtWidgets.QLineEdit()
         self.button = QtWidgets.QPushButton("订阅")
-        self.flash_widget = QtWidgets.QComboBox()
+        
         
         # 标签控件
         label = QtWidgets.QLabel()
@@ -389,7 +469,8 @@ class MainWidget(QtWidgets.QWidget):
         # 交易控件
         self.trading_widget = TradingWidget(self.main_engine)
         self.flash_widget = FlashWidget(self.main_engine, self.event_engine)
-
+        self.tick_monitor = TickMonitor(self.event_engine)
+        
         # 网格布局
         grid = QtWidgets.QGridLayout()
         grid.addWidget(label, 0, 0, 1, 2)
@@ -404,8 +485,13 @@ class MainWidget(QtWidgets.QWidget):
         vbox.addLayout(grid)
         vbox.addWidget(self.trading_widget)
         vbox.addWidget(self.flash_widget)
+        
+        # 水平布局
+        hbox = QtWidgets.QHBoxLayout()
+        hbox.addLayout(vbox)
+        hbox.addWidget(self.tick_monitor)
 
-        self.setLayout(vbox)
+        self.setLayout(hbox)
 
     def register_event(self) -> None:
         """注册事件监听"""
