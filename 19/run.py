@@ -22,7 +22,7 @@ from vnpy_tts import TtsGateway as Gateway
 gateway_name: str = Gateway.default_name
 
 
-class LoginWidget(QtWidgets.QWidget): 
+class LoginDialog(QtWidgets.QDialog): 
     """接口登陆控件"""
 
     def __init__(self, main_engine: MainEngine) -> None:
@@ -83,7 +83,8 @@ class LoginWidget(QtWidgets.QWidget):
         if self.save_check.isChecked():
             save_json("tts_connect_data.json", setting)
         
-        self.close()
+        # 用accept表示对话执行完毕
+        self.accept()
 
     def load_setting(self) -> None:
         """加载配置"""
@@ -494,7 +495,7 @@ class MainWidget(QtWidgets.QMainWindow):
         # 顶部菜单栏
         menubar = self.menuBar()
         sys_menu = menubar.addMenu("系统")
-        sys_menu.addAction("登陆", self.show_login_widget)
+        sys_menu.addAction("登陆", self.show_login_dialog)
                            
         # 底部状态栏
         self.statusBar().showMessage("程序启动")
@@ -607,14 +608,15 @@ class MainWidget(QtWidgets.QMainWindow):
         req = SubscribeRequest(contract.symbol, contract.exchange)
         self.main_engine.subscribe(req, contract.gateway_name)
     
-    def show_login_widget(self) -> None:
+    def show_login_dialog(self) -> None:
         """显示连接登陆控件"""
         # 如果没有则创建
-        if not hasattr(self, "login_widget"):
-            self.login_widget = LoginWidget(self.main_engine)
+        login_dialog = LoginDialog(self.main_engine)
+        n = login_dialog.exec()
 
-        # 显示控件
-        self.login_widget.show()
+        # 检查执行返回值
+        if n == login_dialog.Accepted:
+            print("发起登陆操作")
         
     def process_log_event(self, event: Event) -> None:
         """处理日志事件"""
