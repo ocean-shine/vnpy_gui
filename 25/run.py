@@ -35,7 +35,7 @@ def run() -> None:
     qapp.setFont(font)
     
     # 应用黑色皮肤
-    qapp.setStyleSheet(qdarkstyle.load_stylesheet_pyside6())
+    qapp.setStyleSheet(qdarkstyle.load_stylesheet())
     
     # 获取ico文件路径
     icon_path = Path(__file__).parent.joinpath("logo.ico")
